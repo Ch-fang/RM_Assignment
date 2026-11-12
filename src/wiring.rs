@@ -1,6 +1,6 @@
 //! Complete the two TODOs in this file.
 
-use embassy_stm32::{Peripherals, can::Can, usart::BufferedUart};
+use embassy_stm32::{Peripherals, can::Can, usart::BufferedUart, gpio::{Flex, Level, Output, Speed}};
 
 use crate::swd::Swd;
 
@@ -14,7 +14,9 @@ pub fn configure(p: Peripherals) -> (crate::board::Usb, Ports, Option<Swd>) {
 
     // TODO 1: Pick two exposed 3.3 V GPIOs and pass them to Swd::new.
     // Use Output for SWCLK (initially low), and Flex for bidirectional SWDIO.
-    let swd = None;
+    let swclk = Output::new(p.PD15, Level::Low, Speed::VeryHigh);
+    let swdio = Flex::new(p.PD14);
+    let swd = Some(Swd::new(swclk, swdio));
 
     // TODO 2: Configure a buffered UART at 115200 baud, 8N1.
     // Identify the peripheral, RX/TX pins and interrupt from the schematic.
