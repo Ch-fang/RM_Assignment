@@ -1,22 +1,28 @@
 use core::fmt::Write;
-use embassy_stm32::can::{Can, Frame};
+use embassy_stm32::can::{
+    Can, Frame,
+    frame::{FdFrame, Header},
+};
 use embassy_time::{Duration, with_timeout};
-use embedded_can::{Frame as _, Id};
+use embedded_can::{Frame as _, Id, StandardId};
 use heapless::String;
 
+use crate::board;
 use crate::swd::Swd;
 
-type Reply = String<63>;
+type Reply = String<192>;
+
+const MAX_FD_PAYLOAD: usize = 64;
 
 pub struct Line {
-    bytes: [u8; 96],
+    bytes: [u8; 256],
     len: usize,
 }
 
 impl Line {
     pub const fn new() -> Self {
         Self {
-            bytes: [0; 96],
+            bytes: [0; 256],
             len: 0,
         }
     }
@@ -39,7 +45,15 @@ impl Line {
 }
 
 fn fixed(text: &str) -> Reply {
-    Reply::try_from(text).expect("fixed reply fits one short USB packet")
+    Reply::try_from(text).expect("fixed reply fits")
+}
+
+async fn receive_fd(can: &mut Can<'_>) -> Result<FdFrame, Reply> {
+    match with_timeout(Duration::from_millis(100), can.read_fd()).await {
+        Ok(Ok(envelope)) => Ok(envelope.frame),
+        Ok(Err(_)) => Err(fixed("ERR CAN RX\n")),
+        Err(_) => Err(fixed("EMPTY\n")),
+    }
 }
 
 pub async fn execute(command: &str, can: &mut Can<'_>, swd: &mut Option<Swd>) -> Reply {
@@ -69,30 +83,87 @@ pub async fn execute(command: &str, can: &mut Can<'_>, swd: &mut Option<Swd>) ->
             };
         }
         (Some("CAN"), Some("RX")) if words.next().is_none() => {
-            let envelope = match with_timeout(Duration::from_millis(100), can.read()).await {
-                Ok(Ok(frame)) => frame,
-                Ok(Err(_)) => return fixed("ERR CAN RX\n"),
-                Err(_) => return fixed("EMPTY\n"),
+            let frame = match receive_fd(can).await {
+                Ok(frame) => frame,
+                Err(reply) => return reply,
             };
-            let frame = envelope.frame;
             let Id::Standard(id) = *frame.id() else {
                 return fixed("ERR UNSUPPORTED_FRAME\n");
             };
             if frame.is_remote_frame() {
                 return fixed("ERR UNSUPPORTED_FRAME\n");
             }
-            write!(out, "OK RX {:03X} ", id.as_raw()).expect("CAN prefix fits");
-            if frame.data().is_empty() {
-                out.push('-').expect("empty payload fits");
+            if frame.header().fdcan() {
+                write_fd_frame(&mut out, id.as_raw(), &frame);
+            } else {
+                write_classic_frame(&mut out, id.as_raw(), &frame);
             }
-            for byte in frame.data() {
-                write!(out, "{byte:02X}").expect("8-byte payload fits");
+        }
+        (Some("FD"), Some("TX")) => {
+            let (Some(id), Some(hex), None) = (words.next(), words.next(), words.next()) else {
+                return fixed("ERR SYNTAX\n");
+            };
+            let frame = match parse_fd_frame(id, hex) {
+                Ok(frame) => frame,
+                Err(reply) => return fixed(reply),
+            };
+            return match with_timeout(Duration::from_millis(100), can.write_fd(&frame)).await {
+                Ok(_) => fixed("OK FD QUEUED\n"),
+                Err(_) => fixed("ERR CAN TX\n"),
+            };
+        }
+        (Some("FD"), Some("RX")) if words.next().is_none() => {
+            let frame = match receive_fd(can).await {
+                Ok(frame) => frame,
+                Err(reply) => return reply,
+            };
+            let Id::Standard(id) = *frame.id() else {
+                return fixed("ERR UNSUPPORTED_FRAME\n");
+            };
+            if frame.is_remote_frame() {
+                return fixed("ERR UNSUPPORTED_FRAME\n");
             }
-            out.push('\n').expect("line ending fits");
+            write_fd_frame(&mut out, id.as_raw(), &frame);
+        }
+        (Some("FD"), Some("INFO")) if words.next().is_none() => {
+            let (nbtp, dbtp, cccr, tdcr) = board::fd_regs();
+            writeln!(
+                out,
+                "OK FD NBTP={nbtp:08X} DBTP={dbtp:08X} CCCR={cccr:08X} TDCR={tdcr:08X}"
+            )
+            .expect("FD info fits");
         }
         _ => return fixed("ERR SYNTAX\n"),
     }
     out
+}
+
+fn write_payload(out: &mut Reply, data: &[u8]) {
+    if data.is_empty() {
+        out.push('-').expect("empty payload fits");
+    }
+    for byte in data {
+        write!(out, "{byte:02X}").expect("payload fits");
+    }
+}
+
+fn write_classic_frame(out: &mut Reply, id: u16, frame: &FdFrame) {
+    write!(out, "OK RX {id:03X} ").expect("CAN prefix fits");
+    write_payload(out, frame.data());
+    out.push('\n').expect("line ending fits");
+}
+
+fn write_fd_frame(out: &mut Reply, id: u16, frame: &FdFrame) {
+    let fd = frame.header().fdcan() as u8;
+    let brs = frame.header().bit_rate_switching() as u8;
+    write!(
+        out,
+        "OK RXFD {id:03X} F{fd} B{brs} {:02} ",
+        frame.data().len()
+    )
+    .expect("FD prefix fits");
+    write_payload(out, frame.data());
+    out.push('\n').expect("line ending fits");
 }
 
 fn parse_frame(id: &str, payload: &str) -> Option<Frame> {
@@ -106,4 +177,27 @@ fn parse_frame(id: &str, payload: &str) -> Option<Frame> {
         *byte = u8::from_str_radix(&payload[i * 2..i * 2 + 2], 16).ok()?;
     }
     Frame::new_standard(id, &bytes[..payload.len() / 2]).ok()
+}
+
+fn parse_fd_frame(id: &str, payload: &str) -> Result<FdFrame, &'static str> {
+    let id = u16::from_str_radix(id, 16).map_err(|_| "ERR SYNTAX\n")?;
+    let id = StandardId::new(id).ok_or("ERR SYNTAX\n")?;
+    let payload = if payload == "-" { "" } else { payload };
+    if !payload.is_ascii()
+        || !payload.len().is_multiple_of(2)
+        || payload.len() > MAX_FD_PAYLOAD * 2
+    {
+        return Err("ERR FD FRAME\n");
+    }
+    let len = payload.len() / 2;
+    if !matches!(len, 0..=8 | 12 | 16 | 20 | 24 | 32 | 48 | 64) {
+        return Err("ERR FD LEN\n");
+    }
+    let mut bytes = [0; MAX_FD_PAYLOAD];
+    for (i, byte) in bytes[..len].iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&payload[i * 2..i * 2 + 2], 16)
+            .map_err(|_| "ERR FD FRAME\n")?;
+    }
+    FdFrame::new(Header::new_fd(id.into(), len as u8, false, true), &bytes[..len])
+        .map_err(|_| "ERR FD FRAME\n")
 }
