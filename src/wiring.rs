@@ -5,7 +5,7 @@ use static_cell::StaticCell;
 use crate::swd::Swd;
 
 bind_interrupts!(struct Irqs {
-    UART8 => usart::BufferedInterruptHandler<peripherals::UART8>;
+    USART1 => usart::BufferedInterruptHandler<peripherals::USART1>;
 });
 
 pub struct Ports {
@@ -18,8 +18,8 @@ pub fn configure(p: Peripherals) -> (crate::board::Usb, Ports, Option<Swd>) {
 
     // TODO 1: Pick two exposed 3.3 V GPIOs and pass them to Swd::new.
     // Use Output for SWCLK (initially low), and Flex for bidirectional SWDIO.
-    let swclk = Output::new(p.PD15, Level::Low, Speed::VeryHigh);
-    let swdio = Flex::new(p.PD14);
+    let swclk = Output::new(p.PA0, Level::Low, Speed::Low);
+    let swdio = Flex::new(p.PA2);
     let swd = Some(Swd::new(swclk, swdio));
 
     // TODO 2: Configure a buffered UART at 115200 baud, 8N1.
@@ -35,12 +35,12 @@ pub fn configure(p: Peripherals) -> (crate::board::Usb, Ports, Option<Swd>) {
     uart_config.data_bits = usart::DataBits::DataBits8;
     uart_config.parity = usart::Parity::ParityNone;
     uart_config.stop_bits = usart::StopBits::STOP1;
-    
+
     let uart = Some(
         BufferedUart::new(
-            p.UART8,
-            p.PE0,
-            p.PE1,
+            p.USART1,
+            p.PA10, // RX
+            p.PA9,  // TX
             tx_buf,
             rx_buf,
             Irqs,
