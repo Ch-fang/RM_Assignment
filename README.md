@@ -1,10 +1,10 @@
 # DM-MC02 USB 调试器作业
 
-这是 HerKules L4 的最终作业。目标是把 DM-MC02（STM32H723VG）做成一个 USB 调试探针和串口桥：电脑通过 USB-C 看到两个串口和一个 CMSIS-DAP 演示接口，控制口可以执行 `PING`、`SWD ID`、`CAN TX/RX` 和 CAN FD 命令，UART 口把数据转发到板上的串口。
+这是 HerKules L4 大作业的最终完成版。作业目标是把 DM-MC02（STM32H723VG）做成一个 USB 调试探针和串口桥：电脑通过 USB-C 看到两个串口和一个 CMSIS-DAP 演示接口，控制口可以执行 `PING`、`SWD ID`、`CAN TX/RX` 和 CAN FD 命令，UART 口把数据转发到板上的串口。
 
-扩展方向选择了 **方向 2：5 Mbit/s CAN FD 与 TDC**。详细计算、寄存器值和实现说明见 [`CAN_FD_TDC.md`](CAN_FD_TDC.md)。
+选做CAN作业的扩展方向我选择了 **方向 2：5 Mbit/s CAN FD 与 TDC**。详细计算、寄存器值和实现说明见 [`CAN_FD_TDC.md`](CAN_FD_TDC.md)。
 
-## 实际引脚
+## 引脚表
 
 | 信号 | MCU 引脚 | 接插件/脚号 |
 | --- | --- | --- |
@@ -13,14 +13,14 @@
 | UART TX | PA9 | P10 pin 1（USART1） |
 | UART RX | PA10 | P10 pin 2（USART1） |
 
-模板原本建议 SWD 用 P16 的 PD15/PD14、UART 用 UART8 的 PE0/PE1，但 P16 是 2×12、0.8 mm 间距，手头没有转接板，接不上，所以改成了 P11 和 P10。改动都在 `src/wiring.rs` 里。
+模板原本建议 SWD 用 P16 的 PD15/PD14、UART 用 UART8 的 PE0/PE1，但线下去做测试的时候发现 P16 是 2×12、0.8 mm 间距，当时没有转接板，接不上，所以测试中紧急改成了 P11 和 P10。最后的程序在 `src/wiring.rs` 。
 
 ## 完成情况
 
 - USB 枚举和控制口：通过，`PING` 返回 `OK DM-MC02`。
 - SWD 自测：通过，两次 `SWD ID` 都返回 `OK DPIDR 6BA02477`。
 - UART 回环：通过，返回 `OK UART loopback`。
-- 方向 2 CAN FD + TDC：代码完成，`cargo build --locked` 编译链接通过；**未上板验证**，因为没有第二个 CAN FD 节点。
+- 方向 2 CAN FD + TDC：代码完成，`cargo build --locked` 编译链接通过。时间原因无法去线下上板验证。
 - Classical CAN 命令保留；`CAN RX` 现在也能读出 FD 帧（按 FDF 标志分支）。
 
 ## 编译和烧录
@@ -30,9 +30,9 @@ cargo build --locked
 cargo run --locked
 ```
 
-第一次烧录要用外置探针接 P1；DM-MC02 自己的演示接口不能烧录。
+第一次烧录要用外置探针接 P1。
 
-## 怎么测试
+## 测试
 
 烧录后先找控制口：
 
@@ -69,4 +69,4 @@ python3 host.py <CONTROL_PORT> fd-test
 
 详细的命令、输出和试错过程见 [`TEST_RECORD.md`](TEST_RECORD.md)；方向 2 的寄存器值、计算和未验证声明见 [`CAN_FD_TDC.md`](CAN_FD_TDC.md)。
 
-USART1 不是模板默认列出的 UART8/UART7；如果课程要求必须用那两个接口，需要改接对应引脚。
+

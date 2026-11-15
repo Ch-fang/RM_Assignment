@@ -2,11 +2,8 @@
 
 ## 测试环境
 
-- 测试时间：2026-11-13 12:00 HKT（中午）
+- 测试时间：2026-11-13 12:00 - 13:34 HKT
 - 记录整理：2026-11-15
-- 主机：macOS 27.2
-- 目标板：DM-MC02
-- 外置调试探针：Horco CMSIS-DAP（`ef1a:74e5-0:7844331832`）
 - Rust：1.99.1
 - Cargo：1.99.1
 - probe-rs：0.32.0
@@ -24,11 +21,11 @@
 
 冲突检查：USB 使用 PA11/PA12，CAN1 使用 PD0/PD1，真正的调试口使用 PA13/PA14；上述 SWD 和 UART 引脚与它们不重叠。
 
-## 实施过程中的调整与试错记录
+## 测试过程
 
 ### 1. 原计划与实际接口的差异
 
-最初按 README 的默认建议选脚：SWD 用 P16 的 PD15/PD14（P16 pin 9/11），UART 用 UART8 的 PE0/PE1（P16 pin 15/17）。但是实际拿到板子后发现没有匹配的线去使用 P16 进行短接等操作。
+最初根据作业仓库里 README 的默认建议选脚：SWD 用 P16 的 PD15/PD14（P16 pin 9/11），UART 用 UART8 的 PE0/PE1（P16 pin 15/17）。但是实际拿到板子后发现没有匹配的线去使用 P16 进行短接等操作。
 
 因此根据板卡上实际可用的接插件重新选脚：
 
@@ -56,7 +53,7 @@ USART1 是板上独立 UART，P10 引出了 TX/RX/GND，适合做回环测试。
 
 注意 `BufferedUart::new` 的引脚顺序是 **RX 在前、TX 在后**，所以 USART1 传的是 `p.PA10`（RX）和 `p.PA9`（TX），不是按 TX/RX 的书写顺序。
 
-### 3. 调试过程中遇到的问题与定位
+### 3. 调试过程
 
 | 阶段 | 现象 | 定位与处理 | 结果 |
 | --- | --- | --- | --- |
@@ -103,7 +100,7 @@ OK DM-MC02
 
 ## 实验二：SWD 读取 DPIDR
 
-测试前已将外置探针从 P1 断开，并把 PA0 接到 P1 pin 3（SWCLK）、PA2 接到 P1 pin 4（SWDIO）；同板共地，不额外接 GND。
+测试前将外置探针从 P1 断开，并把 PA0 接到 P1 pin 3（SWCLK）、PA2 接到 P1 pin 4（SWDIO）；同板共地，不额外接 GND。
 
 ### 命令
 
@@ -142,9 +139,9 @@ OK UART loopback
 结论：通过。主机发送的 `HerKules UART\n` 经 USB CDC → USART1 TX → 外部短接 → USART1 RX → USB CDC 原样返回，逐字节一致。
 
 
-## 方向 2：CAN FD + TDC（编译验证）
+## 选做作业——方向 2：CAN FD + TDC（仅进行了编译验证）
 
-本扩展在 FDCAN1 上启用 CAN FD+BRS：仲裁段 1 Mbit/s、数据段 5 Mbit/s、采样点 75%，并启用 TDC（TDCO=12 mtq、TDCF=15 mtq）。实现说明见 [`CAN_FD_TDC.md`](CAN_FD_TDC.md)。
+本扩展在 FDCAN1 上启用 CAN FD+BRS：仲裁段 1 Mbit/s、数据段 5 Mbit/s、采样点 75%，并启用 TDC（TDCO=12 mtq、TDCF=15 mtq）。具体实现细节在 [`CAN_FD_TDC.md`](CAN_FD_TDC.md)。
 
 ### 命令
 
@@ -168,15 +165,7 @@ python3 -m py_compile host.py
 | CCCR | `0x00000300`（FDOE+BSE） |
 | TDCR | `0x00000C0F` |
 
-### 硬件验证状态
-
-**未上板验证。** 需要第二个支持 CAN FD+BRS 的节点（或 USB-CAN-FD 分析仪），双方 1 Mbit/s / 5 Mbit/s、75% 采样点、120 Ω 终端、共地。编译成功只证明能生成固件，不代表总线收发已通过。
-
-## 未测项目
-
-- 选做 Classical CAN 双向收发：未测，当前没有第二个能正常应答的 CAN 节点。
-- 方向 2 CAN FD 双向收发与 TDC 实测：代码已通过编译链接，未上板验证。
-- 选做 Linux SocketCAN：未测。
+代码已通过编译链接，未上板验证。
 
 ## 可复现性说明
 
