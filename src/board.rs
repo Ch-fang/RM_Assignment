@@ -54,9 +54,7 @@ const _: () = {
             == 1_000_000
     );
     assert!(
-        FDCAN_KERNEL_HZ as u64
-            / DATA_PRESCALER as u64
-            / (1 + DATA_SEG1 as u64 + DATA_SEG2 as u64)
+        FDCAN_KERNEL_HZ as u64 / DATA_PRESCALER as u64 / (1 + DATA_SEG1 as u64 + DATA_SEG2 as u64)
             == 5_000_000
     );
     assert!(TDC_FILTER > TDC_OFFSET);

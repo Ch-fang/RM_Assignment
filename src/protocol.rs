@@ -183,9 +183,7 @@ fn parse_fd_frame(id: &str, payload: &str) -> Result<FdFrame, &'static str> {
     let id = u16::from_str_radix(id, 16).map_err(|_| "ERR SYNTAX\n")?;
     let id = StandardId::new(id).ok_or("ERR SYNTAX\n")?;
     let payload = if payload == "-" { "" } else { payload };
-    if !payload.is_ascii()
-        || !payload.len().is_multiple_of(2)
-        || payload.len() > MAX_FD_PAYLOAD * 2
+    if !payload.is_ascii() || !payload.len().is_multiple_of(2) || payload.len() > MAX_FD_PAYLOAD * 2
     {
         return Err("ERR FD FRAME\n");
     }
@@ -195,9 +193,11 @@ fn parse_fd_frame(id: &str, payload: &str) -> Result<FdFrame, &'static str> {
     }
     let mut bytes = [0; MAX_FD_PAYLOAD];
     for (i, byte) in bytes[..len].iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&payload[i * 2..i * 2 + 2], 16)
-            .map_err(|_| "ERR FD FRAME\n")?;
+        *byte = u8::from_str_radix(&payload[i * 2..i * 2 + 2], 16).map_err(|_| "ERR FD FRAME\n")?;
     }
-    FdFrame::new(Header::new_fd(id.into(), len as u8, false, true), &bytes[..len])
-        .map_err(|_| "ERR FD FRAME\n")
+    FdFrame::new(
+        Header::new_fd(id.into(), len as u8, false, true),
+        &bytes[..len],
+    )
+    .map_err(|_| "ERR FD FRAME\n")
 }
