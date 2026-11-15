@@ -142,10 +142,40 @@ OK UART loopback
 结论：通过。主机发送的 `HerKules UART\n` 经 USB CDC → USART1 TX → 外部短接 → USART1 RX → USB CDC 原样返回，逐字节一致。
 
 
+## 方向 2：CAN FD + TDC（编译验证）
+
+本扩展在 FDCAN1 上启用 CAN FD+BRS：仲裁段 1 Mbit/s、数据段 5 Mbit/s、采样点 75%，并启用 TDC（TDCO=12 mtq、TDCF=15 mtq）。实现说明见 [`CAN_FD_TDC.md`](CAN_FD_TDC.md)。
+
+### 命令
+
+```sh
+cargo build --locked
+python3 -m py_compile host.py
+```
+
+### 结果
+
+- `cargo build --locked`：编译、链接成功（`thumbv7em-none-eabihf`，Rust/Cargo 1.99.1）。
+- `python3 -m py_compile host.py`：通过（无输出）。
+- `cargo fmt --check`：本次改动的源文件已格式化；基础模板的 `src/wiring.rs` 保持原样。
+
+预期寄存器值（上板后可用 `FD INFO` 或 probe-rs 回读）：
+
+| 寄存器 | 预期值 |
+| --- | --- |
+| NBTP | `0x26003A13` |
+| DBTP | `0x00800A33` |
+| CCCR | `0x00000300`（FDOE+BSE） |
+| TDCR | `0x00000C0F` |
+
+### 硬件验证状态
+
+**未上板验证。** 需要第二个支持 CAN FD+BRS 的节点（或 USB-CAN-FD 分析仪），双方 1 Mbit/s / 5 Mbit/s、75% 采样点、120 Ω 终端、共地。编译成功只证明能生成固件，不代表总线收发已通过。
+
 ## 未测项目
 
 - 选做 Classical CAN 双向收发：未测，当前没有第二个能正常应答的 CAN 节点。
-- 选做 CAN FD：未测。
+- 方向 2 CAN FD 双向收发与 TDC 实测：代码已通过编译链接，未上板验证。
 - 选做 Linux SocketCAN：未测。
 
 ## 可复现性说明

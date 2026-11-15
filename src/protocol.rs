@@ -48,11 +48,11 @@ fn fixed(text: &str) -> Reply {
     Reply::try_from(text).expect("fixed reply fits")
 }
 
-async fn receive_fd(can: &mut Can<'_>) -> Result<FdFrame, Reply> {
+async fn receive_fd(can: &mut Can<'_>) -> Result<FdFrame, &'static str> {
     match with_timeout(Duration::from_millis(100), can.read_fd()).await {
         Ok(Ok(envelope)) => Ok(envelope.frame),
-        Ok(Err(_)) => Err(fixed("ERR CAN RX\n")),
-        Err(_) => Err(fixed("EMPTY\n")),
+        Ok(Err(_)) => Err("ERR CAN RX\n"),
+        Err(_) => Err("EMPTY\n"),
     }
 }
 
@@ -85,7 +85,7 @@ pub async fn execute(command: &str, can: &mut Can<'_>, swd: &mut Option<Swd>) ->
         (Some("CAN"), Some("RX")) if words.next().is_none() => {
             let frame = match receive_fd(can).await {
                 Ok(frame) => frame,
-                Err(reply) => return reply,
+                Err(reply) => return fixed(reply),
             };
             let Id::Standard(id) = *frame.id() else {
                 return fixed("ERR UNSUPPORTED_FRAME\n");
@@ -115,7 +115,7 @@ pub async fn execute(command: &str, can: &mut Can<'_>, swd: &mut Option<Swd>) ->
         (Some("FD"), Some("RX")) if words.next().is_none() => {
             let frame = match receive_fd(can).await {
                 Ok(frame) => frame,
-                Err(reply) => return reply,
+                Err(reply) => return fixed(reply),
             };
             let Id::Standard(id) = *frame.id() else {
                 return fixed("ERR UNSUPPORTED_FRAME\n");
